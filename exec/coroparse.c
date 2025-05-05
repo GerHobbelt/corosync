@@ -271,6 +271,9 @@ static char *remove_whitespace(char *string, int remove_colon_and_brace)
 	char *end;
 
 	start = string;
+	if (*start == '\0')
+		return start;
+
 	while (*start == ' ' || *start == '\t' || (unsigned char)*start == 0xA0)
 		start++;
 
@@ -288,7 +291,7 @@ static char *remove_whitespace(char *string, int remove_colon_and_brace)
 static int parse_section(FILE *fp,
 			const char *fname,
 			int *line_no,
-			char *path,
+			const char *path,
 			const char **error_string,
 			int depth,
 			enum main_cp_cb_data_state state,
@@ -407,6 +410,11 @@ static int parse_section(FILE *fp,
 			*(loc-1) = '\0';
 			key = remove_whitespace(line, 1);
 			value = remove_whitespace(loc, 0);
+
+			if (strlen(key) == 0) {
+				tmp_error_string = "Key name can't be empty";
+				goto parse_error;
+			}
 
 			if (strlen(path) + strlen(key) + 1 >= ICMAP_KEYNAME_MAXLEN) {
 				tmp_error_string = "New key makes total cmap path too long";
@@ -1198,6 +1206,13 @@ static int main_config_parser_cb(const char *path,
 	case PARSER_CB_SECTION_END:
 		switch (*state) {
 		case MAIN_CP_CB_DATA_STATE_INTERFACE:
+			if (strcmp(path, "totem.interface") != 0) {
+				/*
+				 * Process only end of totem.interface section, not subsections
+				 */
+				break;
+			}
+
 			/*
 			 * Create new interface section
 			 */
@@ -1328,6 +1343,13 @@ static int main_config_parser_cb(const char *path,
 
 			break;
 		case MAIN_CP_CB_DATA_STATE_LOGGER_SUBSYS:
+			if (strcmp(path, "logging.logger_subsys") != 0) {
+				/*
+				 * Process only end of logging.logger_subsys section, not subsections
+				 */
+				break;
+			}
+
 			if (data->subsys == NULL) {
 				*error_string = "No subsys key in logger_subsys directive";
 
@@ -1361,6 +1383,13 @@ static int main_config_parser_cb(const char *path,
 			}
 			break;
 		case MAIN_CP_CB_DATA_STATE_LOGGING_DAEMON:
+			if (strcmp(path, "logging.logging_daemon") != 0) {
+				/*
+				 * Process only end of logging.logging_daemon section, not subsections
+				 */
+				break;
+			}
+
 			if (data->logging_daemon_name == NULL) {
 				*error_string = "No name key in logging_daemon directive";
 
@@ -1441,6 +1470,13 @@ static int main_config_parser_cb(const char *path,
 			}
 			break;
 		case MAIN_CP_CB_DATA_STATE_NODELIST_NODE:
+			if (strcmp(path, "nodelist.node") != 0) {
+				/*
+				 * Process only end of nodelist.node section, not subsections
+				 */
+				break;
+			}
+
 			data->node_number++;
 			break;
 		case MAIN_CP_CB_DATA_STATE_NORMAL:
@@ -1452,21 +1488,11 @@ static int main_config_parser_cb(const char *path,
 		case MAIN_CP_CB_DATA_STATE_NODELIST:
 		case MAIN_CP_CB_DATA_STATE_TOTEM:
 		case MAIN_CP_CB_DATA_STATE_SYSTEM:
-			break;
 		case MAIN_CP_CB_DATA_STATE_RESOURCES:
-			*state = MAIN_CP_CB_DATA_STATE_NORMAL;
-			break;
 		case MAIN_CP_CB_DATA_STATE_RESOURCES_SYSTEM:
-			*state = MAIN_CP_CB_DATA_STATE_RESOURCES;
-			break;
 		case MAIN_CP_CB_DATA_STATE_RESOURCES_SYSTEM_MEMUSED:
-			*state = MAIN_CP_CB_DATA_STATE_RESOURCES_SYSTEM;
-			break;
 		case MAIN_CP_CB_DATA_STATE_RESOURCES_PROCESS:
-			*state = MAIN_CP_CB_DATA_STATE_RESOURCES;
-			break;
 		case MAIN_CP_CB_DATA_STATE_RESOURCES_PROCESS_MEMUSED:
-			*state = MAIN_CP_CB_DATA_STATE_RESOURCES_PROCESS;
 			break;
 		}
 		break;
