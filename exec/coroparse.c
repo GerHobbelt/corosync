@@ -608,6 +608,7 @@ static int main_config_parser_cb(const char *path,
 	struct qb_list_head *iter, *tmp_iter;
 	int uid, gid;
 	cs_error_t cs_err;
+	const char *path_prefix;
 
 	cs_err = CS_OK;
 
@@ -940,7 +941,7 @@ static int main_config_parser_cb(const char *path,
 			}
 			break;
 		case MAIN_CP_CB_DATA_STATE_LOGGER_SUBSYS:
-			if (strcmp(key, "subsys") == 0) {
+			if (strcmp(path, "logging.logger_subsys.subsys") == 0) {
 				data->subsys = strdup(value);
 				if (data->subsys == NULL) {
 					*error_string = "Can't alloc memory";
@@ -948,6 +949,14 @@ static int main_config_parser_cb(const char *path,
 					return (0);
 				}
 			} else {
+				path_prefix = "logging.logger_subsys.";
+				if (strlen(path) < strlen(path_prefix) ||
+				    strncmp(path, path_prefix, strlen(path_prefix)) != 0) {
+					*error_string = "Internal error - incorrect path prefix for logger subsys state";
+
+					return (0);
+				}
+
 				kv_item = malloc(sizeof(*kv_item));
 				if (kv_item == NULL) {
 					*error_string = "Can't alloc memory";
@@ -956,7 +965,7 @@ static int main_config_parser_cb(const char *path,
 				}
 				memset(kv_item, 0, sizeof(*kv_item));
 
-				kv_item->key = strdup(key);
+				kv_item->key = strdup(path + strlen(path_prefix));
 				kv_item->value = strdup(value);
 				if (kv_item->key == NULL || kv_item->value == NULL) {
 					free(kv_item->key);
@@ -972,14 +981,14 @@ static int main_config_parser_cb(const char *path,
 			add_as_string = 0;
 			break;
 		case MAIN_CP_CB_DATA_STATE_LOGGING_DAEMON:
-			if (strcmp(key, "subsys") == 0) {
+			if (strcmp(path, "logging.logging_daemon.subsys") == 0) {
 				data->subsys = strdup(value);
 				if (data->subsys == NULL) {
 					*error_string = "Can't alloc memory";
 
 					return (0);
 				}
-			} else if (strcmp(key, "name") == 0) {
+			} else if (strcmp(path, "logging.logging_daemon.name") == 0) {
 				data->logging_daemon_name = strdup(value);
 				if (data->logging_daemon_name == NULL) {
 					*error_string = "Can't alloc memory";
@@ -987,6 +996,14 @@ static int main_config_parser_cb(const char *path,
 					return (0);
 				}
 			} else {
+				path_prefix = "logging.logging_daemon.";
+				if (strlen(path) < strlen(path_prefix) ||
+				    strncmp(path, path_prefix, strlen(path_prefix)) != 0) {
+					*error_string = "Internal error - incorrect path prefix for logging daemon state";
+
+					return (0);
+				}
+
 				kv_item = malloc(sizeof(*kv_item));
 				if (kv_item == NULL) {
 					*error_string = "Can't alloc memory";
@@ -995,7 +1012,7 @@ static int main_config_parser_cb(const char *path,
 				}
 				memset(kv_item, 0, sizeof(*kv_item));
 
-				kv_item->key = strdup(key);
+				kv_item->key = strdup(path + strlen(path_prefix));
 				kv_item->value = strdup(value);
 				if (kv_item->key == NULL || kv_item->value == NULL) {
 					free(kv_item->key);
@@ -1011,7 +1028,7 @@ static int main_config_parser_cb(const char *path,
 			add_as_string = 0;
 			break;
 		case MAIN_CP_CB_DATA_STATE_UIDGID:
-			if (strcmp(key, "uid") == 0) {
+			if (strcmp(path, "uidgid.uid") == 0) {
 				uid = uid_determine(value);
 				if (uid == -1) {
 					*error_string = error_string_response;
@@ -1023,7 +1040,7 @@ static int main_config_parser_cb(const char *path,
 					goto icmap_set_error;
 				}
 				add_as_string = 0;
-			} else if (strcmp(key, "gid") == 0) {
+			} else if (strcmp(path, "uidgid.gid") == 0) {
 				gid = gid_determine(value);
 				if (gid == -1) {
 					*error_string = error_string_response;
@@ -1041,7 +1058,7 @@ static int main_config_parser_cb(const char *path,
 			}
 			break;
 		case MAIN_CP_CB_DATA_STATE_MEMBER:
-			if (strcmp(key, "memberaddr") != 0) {
+			if (strcmp(path, "totem.interface.member.memberaddr") != 0) {
 				*error_string = "Only memberaddr is allowed in member section";
 
 				return (0);
@@ -1072,9 +1089,18 @@ static int main_config_parser_cb(const char *path,
 		case MAIN_CP_CB_DATA_STATE_NODELIST:
 			break;
 		case MAIN_CP_CB_DATA_STATE_NODELIST_NODE:
-			snprintf(key_name, ICMAP_KEYNAME_MAXLEN, "nodelist.node.%u.%s", data->node_number, key);
-			if ((strcmp(key, "nodeid") == 0) ||
-			    (strcmp(key, "quorum_votes") == 0)) {
+			path_prefix = "nodelist.node.";
+			if (strlen(path) < strlen(path_prefix) ||
+			    strncmp(path, path_prefix, strlen(path_prefix)) != 0) {
+				*error_string = "Internal error - incorrect path prefix for nodelist node state";
+
+				return (0);
+			}
+
+			snprintf(key_name, ICMAP_KEYNAME_MAXLEN, "nodelist.node.%u.%s", data->node_number,
+			    path + strlen(path_prefix));
+			if ((strcmp(path, "nodelist.node.nodeid") == 0) ||
+			    (strcmp(path, "nodelist.node.quorum_votes") == 0)) {
 				val_type = ICMAP_VALUETYPE_UINT32;
 				if (safe_atoq(value, &val, val_type) != 0) {
 					goto atoi_error;
@@ -1202,6 +1228,18 @@ static int main_config_parser_cb(const char *path,
 		if (strcmp(path, "resources.process.memory_used") == 0) {
 			*state = MAIN_CP_CB_DATA_STATE_RESOURCES_PROCESS_MEMUSED;
 		}
+
+		if (*state == MAIN_CP_CB_DATA_STATE_UIDGID && strcmp(path, "uidgid") != 0) {
+			*error_string = "Subsections are not allowed within uidgid section";
+
+			return (0);
+		};
+
+		if (*state == MAIN_CP_CB_DATA_STATE_MEMBER && strcmp(path, "totem.interface.member") != 0) {
+			*error_string = "Subsections are not allowed within totem.interface.member section";
+
+			return (0);
+		};
 		break;
 	case PARSER_CB_SECTION_END:
 		switch (*state) {
