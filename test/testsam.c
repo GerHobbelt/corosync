@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2011 Red Hat, Inc.
+ * Copyright (c) 2009-2025 Red Hat, Inc.
  *
  * All rights reserved.
  *
@@ -38,9 +38,11 @@
 
 #include <config.h>
 
+#include <sys/types.h>
+#include <sys/resource.h>
+
 #include <limits.h>
 #include <pthread.h>
-#include <sys/types.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -238,12 +240,20 @@ static int test2 (void) {
 }
 
 /*
- * Smoke test. Better to turn off coredump ;) This has no time limit, just restart process
+ * Smoke test. This has no time limit, just restart process
  * when it dies.
  */
 static int test3 (void) {
 	cs_error_t error;
 	unsigned int instance_id;
+	struct rlimit lim;
+
+	lim.rlim_cur = lim.rlim_max = 0;
+
+	/*
+	 * Try to turn off core creation
+	 */
+	setrlimit(RLIMIT_CORE, &lim);
 
 	printf ("%s: initialize\n", __FUNCTION__);
 	error = sam_initialize (0, SAM_RECOVERY_POLICY_RESTART);
@@ -754,6 +764,7 @@ static int test7 (void) {
 	unsigned int instance_id;
 	pthread_t kill_thread;
 	char *str;
+	uint32_t expected_votes;
 
 	err = cmap_initialize (&cmap_handle);
 	if (err != CS_OK) {
@@ -766,17 +777,27 @@ static int test7 (void) {
 		printf ("Could not get \"provider\" key: %d. Test skipped\n", err);
 		return (1);
 	}
-        if (strcmp(str, "testquorum") != 0) {
-		printf ("Provider is not testquorum. Test skipped\n");
+        if (strcmp(str, "corosync_votequorum") != 0) {
+		printf ("Provider is not corosync_votequorum. Test skipped\n");
 		free(str);
 		return (1);
         }
 	free(str);
 
+	if (cmap_get_uint32(cmap_handle, "quorum.expected_votes", &expected_votes) != CS_OK) {
+		printf ("Could not get \"expected_votes\" key: %d. Test skipped\n", err);
+		return (1);
+	}
+
+	if (expected_votes != 1) {
+		printf ("Expected_votes is not 1. Test skipped\n");
+		return (1);
+	}
+
 	/*
 	 * Set to not quorate
 	 */
-	err = cmap_set_uint8(cmap_handle, "quorum.quorate", 0);
+	err = cmap_set_uint32(cmap_handle, "quorum.expected_votes", 2);
 	if (err != CS_OK) {
 		printf ("Can't set map key. Error %d\n", err);
 		return (2);
@@ -817,7 +838,7 @@ static int test7 (void) {
 		/*
 		 * Set to quorate
 		 */
-		err = cmap_set_uint8(cmap_handle, "quorum.quorate", 1);
+		err = cmap_set_uint32(cmap_handle, "quorum.expected_votes", 1);
 		if (err != CS_OK) {
 			printf ("Can't set map key. Error %d\n", err);
 			return (2);
@@ -833,7 +854,7 @@ static int test7 (void) {
 		/*
 		 * Set corosync unquorate
 		 */
-		err = cmap_set_uint8(cmap_handle, "quorum.quorate", 0);
+		err = cmap_set_uint32(cmap_handle, "quorum.expected_votes", 2);
 		if (err != CS_OK) {
 			printf ("Can't set map key. Error %d\n", err);
 			return (2);
@@ -1238,6 +1259,8 @@ int main(int argc, char *argv[])
 	int stat;
 	int all_passed = 1;
 	int no_skipped = 0;
+
+	setlinebuf(stdout);
 
 	pid = fork ();
 
