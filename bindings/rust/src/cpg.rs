@@ -14,7 +14,7 @@
 use crate::sys::cpg as ffi;
 
 use std::collections::HashMap;
-use std::ffi::{CStr, CString};
+use std::ffi::{c_char, CStr};
 use std::fmt;
 use std::os::raw::{c_int, c_void};
 use std::ptr::copy_nonoverlapping;
@@ -202,10 +202,6 @@ fn string_to_cpg_name(group: &str) -> Result<ffi::cpg_name> {
         return Err(CsError::CsErrInvalidParam);
     }
 
-    let c_name = match CString::new(group) {
-        Ok(n) => n,
-        Err(_) => return Err(CsError::CsErrLibrary),
-    };
     let mut c_group = ffi::cpg_name {
         length: group.len() as u32,
         value: [0; CPG_NAMELEN_MAX],
@@ -213,7 +209,11 @@ fn string_to_cpg_name(group: &str) -> Result<ffi::cpg_name> {
 
     unsafe {
         // NOTE param order is 'wrong-way round' from C
-        copy_nonoverlapping(c_name.as_ptr(), c_group.value.as_mut_ptr(), group.len());
+        copy_nonoverlapping(
+            group.as_ptr() as *const c_char,
+            c_group.value.as_mut_ptr(),
+            group.len(),
+        );
     }
 
     Ok(c_group)
@@ -381,7 +381,7 @@ pub fn fd_get(handle: &Handle) -> Result<i32> {
     let c_fd: *mut c_int = &mut 0 as *mut _ as *mut c_int;
     let res = unsafe { ffi::cpg_fd_get(handle.cpg_handle, c_fd) };
     if res == ffi::CS_OK {
-        Ok(c_fd as i32)
+        Ok(unsafe { *c_fd })
     } else {
         Err(CsError::from_c(res))
     }
