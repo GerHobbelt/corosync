@@ -139,7 +139,7 @@ struct totemudpu_instance {
 
 	void *udpu_context;
 
-	char iov_buffer[UDP_RECEIVE_FRAME_SIZE_MAX];
+	char iov_buffer[UDP_RECEIVE_FRAME_SIZE_MAX + 1];
 
 	struct iovec totemudpu_iov_recv;
 
@@ -214,7 +214,7 @@ static void totemudpu_instance_initialize (struct totemudpu_instance *instance)
 
 	instance->totemudpu_iov_recv.iov_base = instance->iov_buffer;
 
-	instance->totemudpu_iov_recv.iov_len = UDP_RECEIVE_FRAME_SIZE_MAX; //sizeof (instance->iov_buffer);
+	instance->totemudpu_iov_recv.iov_len = UDP_RECEIVE_FRAME_SIZE_MAX + 1; //sizeof (instance->iov_buffer) + 1;
 
 	/*
 	 * There is always atleast 1 processor
@@ -277,21 +277,6 @@ static inline void ucast_sendmsg (
 	msg_ucast.msg_namelen = addrlen;
 	msg_ucast.msg_iov = (void *)&iovec;
 	msg_ucast.msg_iovlen = 1;
-#ifdef HAVE_MSGHDR_CONTROL
-	msg_ucast.msg_control = 0;
-#endif
-#ifdef HAVE_MSGHDR_CONTROLLEN
-	msg_ucast.msg_controllen = 0;
-#endif
-#ifdef HAVE_MSGHDR_FLAGS
-	msg_ucast.msg_flags = 0;
-#endif
-#ifdef HAVE_MSGHDR_ACCRIGHTS
-	msg_ucast.msg_accrights = NULL;
-#endif
-#ifdef HAVE_MSGHDR_ACCRIGHTSLEN
-	msg_ucast.msg_accrightslen = 0;
-#endif
 
 	if (instance->netif_bind_state == BIND_STATE_REGULAR) {
 		send_sock = instance->token_socket;
@@ -336,47 +321,31 @@ static inline void mcast_sendmsg (
 	 */
 	if (instance->netif_bind_state == BIND_STATE_REGULAR) {
 		qb_list_for_each(list, &(instance->member_list)) {
-			member = qb_list_entry (list,
-				struct totemudpu_member,
-				list);
-				/*
-				 * Do not send multicast message if message is not "flush", member
-				 * is inactive and timeout for sending merge message didn't expired.
-				 */
-				if (only_active && !member->active && !instance->send_merge_detect_message)
-					continue ;
+			member = qb_list_entry (list, struct totemudpu_member, list);
+			/*
+			 * Do not send multicast message if message is not "flush", member
+			 * is inactive and timeout for sending merge message didn't expired.
+			 */
+			if (only_active && !member->active && !instance->send_merge_detect_message)
+				continue ;
 
-				totemip_totemip_to_sockaddr_convert(&member->member,
-					instance->totem_interface->ip_port, &sockaddr, &addrlen);
-				msg_mcast.msg_name = &sockaddr;
-				msg_mcast.msg_namelen = addrlen;
-				msg_mcast.msg_iov = (void *)&iovec;
-				msg_mcast.msg_iovlen = 1;
-			#ifdef HAVE_MSGHDR_CONTROL
-				msg_mcast.msg_control = 0;
-			#endif
-			#ifdef HAVE_MSGHDR_CONTROLLEN
-				msg_mcast.msg_controllen = 0;
-			#endif
-			#ifdef HAVE_MSGHDR_FLAGS
-				msg_mcast.msg_flags = 0;
-			#endif
-			#ifdef HAVE_MSGHDR_ACCRIGHTS
-				msg_mcast.msg_accrights = NULL;
-			#endif
-			#ifdef HAVE_MSGHDR_ACCRIGHTSLEN
-				msg_mcast.msg_accrightslen = 0;
-			#endif
+			totemip_totemip_to_sockaddr_convert(&member->member,
+				instance->totem_interface->ip_port, &sockaddr, &addrlen);
+			memset(&msg_mcast, 0, sizeof(msg_mcast));
+			msg_mcast.msg_name = &sockaddr;
+			msg_mcast.msg_namelen = addrlen;
+			msg_mcast.msg_iov = (void *)&iovec;
+			msg_mcast.msg_iovlen = 1;
 
-				/*
-				 * Transmit multicast message
-				 * An error here is recovered by totemsrp
-				 */
-				res = sendmsg (member->fd, &msg_mcast, MSG_NOSIGNAL);
-				if (res < 0) {
-					LOGSYS_PERROR (errno, instance->totemudpu_log_level_debug,
-						"sendmsg(mcast) failed (non-critical)");
-				}
+			/*
+			 * Transmit multicast message
+			 * An error here is recovered by totemsrp
+			 */
+			res = sendmsg (member->fd, &msg_mcast, MSG_NOSIGNAL);
+			if (res < 0) {
+				LOGSYS_PERROR (errno, instance->totemudpu_log_level_debug,
+					"sendmsg(mcast) failed (non-critical)");
+			}
 		}
 
 		if (!only_active || instance->send_merge_detect_message) {
@@ -395,21 +364,6 @@ static inline void mcast_sendmsg (
 		msg_mcast.msg_namelen = 0;
 		msg_mcast.msg_iov = (void *)&iovec;
 		msg_mcast.msg_iovlen = 1;
-	#ifdef HAVE_MSGHDR_CONTROL
-		msg_mcast.msg_control = 0;
-	#endif
-	#ifdef HAVE_MSGHDR_CONTROLLEN
-		msg_mcast.msg_controllen = 0;
-	#endif
-	#ifdef HAVE_MSGHDR_FLAGS
-		msg_mcast.msg_flags = 0;
-	#endif
-	#ifdef HAVE_MSGHDR_ACCRIGHTS
-		msg_mcast.msg_accrights = NULL;
-	#endif
-	#ifdef HAVE_MSGHDR_ACCRIGHTSLEN
-		msg_mcast.msg_accrightslen = 0;
-	#endif
 
 		res = sendmsg (instance->local_loop_sock[1], &msg_mcast,
 			MSG_NOSIGNAL);
@@ -480,32 +434,17 @@ static int net_deliver_fn (
 	struct iovec *iovec;
 	struct sockaddr_storage system_from;
 	int bytes_received;
-	int truncated_packet;
 
 	iovec = &instance->totemudpu_iov_recv;
 
 	/*
 	 * Receive datagram
 	 */
+	memset(&msg_recv, 0, sizeof(msg_recv));
 	msg_recv.msg_name = &system_from;
 	msg_recv.msg_namelen = sizeof (struct sockaddr_storage);
 	msg_recv.msg_iov = iovec;
 	msg_recv.msg_iovlen = 1;
-#ifdef HAVE_MSGHDR_CONTROL
-	msg_recv.msg_control = 0;
-#endif
-#ifdef HAVE_MSGHDR_CONTROLLEN
-	msg_recv.msg_controllen = 0;
-#endif
-#ifdef HAVE_MSGHDR_FLAGS
-	msg_recv.msg_flags = 0;
-#endif
-#ifdef HAVE_MSGHDR_ACCRIGHTS
-	msg_recv.msg_accrights = NULL;
-#endif
-#ifdef HAVE_MSGHDR_ACCRIGHTSLEN
-	msg_recv.msg_accrightslen = 0;
-#endif
 
 	bytes_received = recvmsg (fd, &msg_recv, MSG_NOSIGNAL | MSG_DONTWAIT);
 	if (bytes_received == -1) {
@@ -514,26 +453,15 @@ static int net_deliver_fn (
 		instance->stats_recv += bytes_received;
 	}
 
-	truncated_packet = 0;
-
-#ifdef HAVE_MSGHDR_FLAGS
-	if (msg_recv.msg_flags & MSG_TRUNC) {
-		truncated_packet = 1;
-	}
-#else
-	/*
-	 * We don't have MSGHDR_FLAGS, but we can (hopefully) safely make assumption that
-	 * if bytes_received == UDP_RECEIVE_FRAME_SIZE_MAX then packet is truncated
-	 */
-	if (bytes_received == UDP_RECEIVE_FRAME_SIZE_MAX) {
-		truncated_packet = 1;
-	}
-#endif
-
-	if (truncated_packet) {
+	if (bytes_received >= UDP_RECEIVE_FRAME_SIZE_MAX + 1) {
+		/*
+		 * Maximum packet size should be UDP_RECEIVE_FRAME_SIZE_MAX.
+		 * If received packet is UDP_RECEIVE_FRAME_SIZE_MAX + 1 it means packet was truncated
+		 * (iov_buffer size and iov_len are intentionally set to UDP_RECEIVE_FRAME_SIZE_MAX + 1).
+		 */
 		log_printf (instance->totemudpu_log_level_error,
-				"Received too big message. This may be because something bad is happening"
-				"on the network (attack?), or you tried join more nodes than corosync is"
+				"Received too big message. This may be because something bad is happening "
+				"on the network (attack?), or you tried join more nodes than corosync is "
 				"compiled with (%u) or bug in the code (bad estimation of "
 				"the UDP_RECEIVE_FRAME_SIZE_MAX). Dropping packet.", PROCESSOR_COUNT_MAX);
 		return (0);
@@ -559,7 +487,7 @@ static int net_deliver_fn (
 		iovec->iov_len,
 		&system_from);
 
-	iovec->iov_len = UDP_RECEIVE_FRAME_SIZE_MAX;
+	iovec->iov_len = UDP_RECEIVE_FRAME_SIZE_MAX + 1;
 	return (0);
 }
 
@@ -1009,7 +937,7 @@ int totemudpu_initialize (
 	 * Initialize local variables for totemudpu
 	 */
 	instance->totem_interface = &totem_config->interfaces[0];
-	memset (instance->iov_buffer, 0, UDP_RECEIVE_FRAME_SIZE_MAX);
+	memset (instance->iov_buffer, 0, UDP_RECEIVE_FRAME_SIZE_MAX + 1);
 
 	instance->totemudpu_poll_handle = poll_handle;
 
@@ -1194,25 +1122,11 @@ extern int totemudpu_recv_mcast_empty (
 	/*
 	 * Receive datagram
 	 */
+	memset(&msg_recv, 0, sizeof(msg_recv));
 	msg_recv.msg_name = &system_from;
 	msg_recv.msg_namelen = sizeof (struct sockaddr_storage);
 	msg_recv.msg_iov = &instance->totemudpu_iov_recv;
 	msg_recv.msg_iovlen = 1;
-#ifdef HAVE_MSGHDR_CONTROL
-	msg_recv.msg_control = 0;
-#endif
-#ifdef HAVE_MSGHDR_CONTROLLEN
-	msg_recv.msg_controllen = 0;
-#endif
-#ifdef HAVE_MSGHDR_FLAGS
-	msg_recv.msg_flags = 0;
-#endif
-#ifdef HAVE_MSGHDR_ACCRIGHTS
-	msg_recv.msg_accrights = NULL;
-#endif
-#ifdef HAVE_MSGHDR_ACCRIGHTSLEN
-	msg_recv.msg_accrightslen = 0;
-#endif
 
 	for (i = 0; i < 2; i++) {
 		sock = -1;
